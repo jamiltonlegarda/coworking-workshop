@@ -1,0 +1,357 @@
+{
+  "info": {
+    "name": "Coworking Workshop",
+    "description": "Pruebas de catalog-service (8001) y orders-service (8002). Levantar antes con: docker-compose up --build -d",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "catalog-service (8001)",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{catalog_url}}/health",
+              "host": [
+                "{{catalog_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Verifica que el catalogo esta vivo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"service es catalog-service\", function () {",
+                  "    pm.expect(pm.response.json().service).to.eql(\"catalog-service\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar espacios",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{catalog_url}}/spaces",
+              "host": [
+                "{{catalog_url}}"
+              ],
+              "path": [
+                "spaces"
+              ]
+            },
+            "description": "Devuelve todos los espacios de coworking."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Devuelve 3 espacios\", function () {",
+                  "    pm.expect(pm.response.json().length).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Obtener espacio 1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{catalog_url}}/spaces/1",
+              "host": [
+                "{{catalog_url}}"
+              ],
+              "path": [
+                "spaces",
+                "1"
+              ]
+            },
+            "description": "Contrato que usa orders-service. En el Lab 5 este campo se renombro a hourly_rate."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Tiene el campo price_per_hour (contrato)\", function () {",
+                  "    pm.expect(pm.response.json()).to.have.property(\"price_per_hour\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Espacio inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{catalog_url}}/spaces/999",
+              "host": [
+                "{{catalog_url}}"
+              ],
+              "path": [
+                "spaces",
+                "999"
+              ]
+            },
+            "description": "Caso de error: el espacio no existe."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "orders-service (8002)",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orders_url}}/health",
+              "host": [
+                "{{orders_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Verifica que orders-service esta vivo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear orden",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{orders_url}}/orders?space_id=1&user_email=test@example.com&hours=2",
+              "host": [
+                "{{orders_url}}"
+              ],
+              "path": [
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "space_id",
+                  "value": "1"
+                },
+                {
+                  "key": "user_email",
+                  "value": "test@example.com"
+                },
+                {
+                  "key": "hours",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "orders-service consulta al catalogo por HTTP para calcular el precio. Si el catalogo esta caido responde 503 (Lab 4); si cambia el contrato responde 500 (Lab 5)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"total_price = 50.0 (25.0 x 2h)\", function () {",
+                  "    pm.expect(pm.response.json().total_price).to.eql(50.0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar ordenes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{orders_url}}/orders",
+              "host": [
+                "{{orders_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            },
+            "description": "Lista las ordenes guardadas en memoria."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Orden con espacio inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{orders_url}}/orders?space_id=999&user_email=test@example.com&hours=2",
+              "host": [
+                "{{orders_url}}"
+              ],
+              "path": [
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "space_id",
+                  "value": "999"
+                },
+                {
+                  "key": "user_email",
+                  "value": "test@example.com"
+                },
+                {
+                  "key": "hours",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "El catalogo responde 404 y orders-service lo propaga."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Orden con horas invalidas (400)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{orders_url}}/orders?space_id=1&user_email=test@example.com&hours=0",
+              "host": [
+                "{{orders_url}}"
+              ],
+              "path": [
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "space_id",
+                  "value": "1"
+                },
+                {
+                  "key": "user_email",
+                  "value": "test@example.com"
+                },
+                {
+                  "key": "hours",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Validacion: hours debe ser mayor que 0."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "catalog_url",
+      "value": "http://localhost:8001",
+      "type": "string"
+    },
+    {
+      "key": "orders_url",
+      "value": "http://localhost:8002",
+      "type": "string"
+    }
+  ]
+}
