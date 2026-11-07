@@ -9,13 +9,13 @@ class Space(BaseModel):
     id: int
     name: str
     capacity: int
-    price_per_hour: float
+    hourly_rate: float
 
 
 SPACES = [
-    Space(id=1, name="Sala Creativa", capacity=6, price_per_hour=25.0),
-    Space(id=2, name="Escritorio Compartido", capacity=1, price_per_hour=8.0),
-    Space(id=3, name="Sala de Juntas", capacity=12, price_per_hour=40.0),
+    Space(id=1, name="Sala Creativa", capacity=6, hourly_rate=25.0),
+    Space(id=2, name="Escritorio Compartido", capacity=1, hourly_rate=8.0),
+    Space(id=3, name="Sala de Juntas", capacity=12, hourly_rate=40.0),
 ]
 
 
