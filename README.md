@@ -66,6 +66,7 @@ Respuesta esperada: una orden con `total_price` 50.0 (25.0 por hora x 2 horas).
 coworking-workshop/
 ├── README.md
 ├── docker-compose.yml
+├── template.yaml
 ├── chaos-test.sh
 ├── chaos-report.md
 ├── architecture-diagram.png
@@ -74,10 +75,17 @@ coworking-workshop/
 │   ├── main.py
 │   ├── requirements.txt
 │   └── Dockerfile
-└── orders-service/
-    ├── main.py
-    ├── requirements.txt
-    └── Dockerfile
+├── orders-service/
+│   ├── main.py
+│   ├── requirements.txt
+│   └── Dockerfile
+├── lambda-catalog/
+│   ├── handler.py
+│   └── requirements.txt
+├── lambda-consumer/
+│   └── handler.py
+└── events/
+    └── sqs-event.json
 ```
 
 ## Labs realizados
@@ -89,6 +97,8 @@ coworking-workshop/
 | 3 | Docker Compose con red compartida |
 | 4 | Chaos Engineering: apagar el catálogo (`chaos-test.sh`) |
 | 5 | Chaos Engineering: cambiar el contrato sin avisar |
+| 6 | Catálogo como función AWS Lambda con API Gateway y evento `SpaceChanged` en EventBridge (despliegue pendiente) |
+| 7 | Consumer Lambda con cola SQS y regla de EventBridge; `orders-service` recibe el evento y responde 409 |
 
 ## Chaos Engineering
 
