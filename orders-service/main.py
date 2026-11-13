@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI(title="Orders Service")
 
@@ -11,6 +12,16 @@ app = FastAPI(title="Orders Service")
 CATALOG_URL = os.getenv("CATALOG_URL", "http://catalog-service:8001")
 
 ORDERS = []
+
+
+class SpaceChanged(BaseModel):
+    space_id: int
+    available: bool
+    changed_at: str | None = None
+
+
+# Espacios que el catálogo marcó como no disponibles (en memoria)
+UNAVAILABLE_SPACES = set()
 
 
 @app.get("/health")
@@ -23,10 +34,22 @@ def list_orders():
     return ORDERS
 
 
+@app.post("/events/space-changed")
+def handle_space_changed(evt: SpaceChanged):
+    if evt.available:
+        UNAVAILABLE_SPACES.discard(evt.space_id)
+    else:
+        UNAVAILABLE_SPACES.add(evt.space_id)
+    return {"status": "processed", "unavailable_spaces": sorted(UNAVAILABLE_SPACES)}
+
+
 @app.post("/orders")
 def create_order(space_id: int, user_email: str, hours: int):
     if hours <= 0:
         raise HTTPException(status_code=400, detail="hours must be greater than 0")
+
+    if space_id in UNAVAILABLE_SPACES:
+        raise HTTPException(status_code=409, detail="Space not available")
 
     # 1. Consultar al catalog-service por HTTP
     try:
