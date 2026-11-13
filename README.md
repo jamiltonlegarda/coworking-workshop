@@ -110,3 +110,38 @@ El contrato del catálogo quedó restaurado en un commit posterior al Lab 5.
 ## Pruebas con Postman
 
 Importar `coworking.postman_collection.json` en Postman y ejecutar la colección (**Run collection**) con los contenedores levantados. Incluye 9 peticiones y 13 pruebas automáticas, entre ellas la que valida que el campo `price_per_hour` existe en el catálogo.
+
+## Parte 2: Serverless (Labs 6 y 7)
+
+Migración del catálogo a funciones AWS Lambda y comunicación por eventos.
+
+```
+API Gateway /catalog -> Lambda catalog-fn -> EventBridge (SpaceChanged)
+   -> SQS (catalog-events) -> Lambda consumer-fn -> orders-service
+```
+
+### Archivos
+
+| Archivo | Para qué sirve |
+|---|---|
+| `lambda-catalog/handler.py` | Catálogo como Lambda; al cambiar la disponibilidad publica el evento `SpaceChanged` |
+| `lambda-consumer/handler.py` | Lee la cola SQS y reenvía cada evento a `orders-service` |
+| `template.yaml` | Plantilla AWS SAM: funciones, API Gateway, cola SQS y regla de EventBridge |
+| `events/sqs-event.json` | Mensaje de prueba para ejecutar el consumer en local |
+
+### orders-service y los eventos
+
+`POST /events/space-changed` recibe `{"space_id": 1, "available": false}` y marca el espacio como no disponible. Mientras lo esté, `POST /orders` responde **409 Space not available**. El estado se guarda en memoria y se pierde al reiniciar.
+
+### Estado
+
+- `sam validate` y `sam build` terminan correctamente.
+- El consumer se probó en local con `sam local invoke`, enviando el evento a `orders-service` en Docker, y las órdenes del espacio afectado se rechazaron con 409.
+- **El despliegue en AWS no se pudo completar**: una service control policy de la cuenta (plan gratuito de AWS) deniega CloudFormation, Lambda, SQS y EventBridge. Se abrió un caso con AWS Support.
+
+### Probar en local
+
+```powershell
+sam build
+sam local invoke ConsumerFunction --event events/sqs-event.json --parameter-overrides OrdersUrl=http://host.docker.internal:8002
+```
