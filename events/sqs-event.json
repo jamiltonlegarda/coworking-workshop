@@ -1,0 +1,8 @@
+{
+  "Records": [
+    {
+      "messageId": "test-1",
+      "body": "{\"version\":\"0\",\"detail-type\":\"SpaceChanged\",\"source\":\"coworking.catalog\",\"detail\":{\"space_id\":2,\"available\":false,\"changed_at\":\"2026-11-13T21:30:00+00:00\"}}"
+    }
+  ]
+}

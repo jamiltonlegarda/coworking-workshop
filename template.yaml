@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Coworking - catalogo serverless y eventos
+
+Parameters:
+  OrdersUrl:
+    Type: String
+    Default: ""
+    Description: URL publica de orders-service (opcional)
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+    MemorySize: 128
+
+Resources:
+  CatalogFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: catalog-fn
+      CodeUri: lambda-catalog/
+      Handler: handler.lambda_handler
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: default
+      Policies:
+        - EventBridgePutEventsPolicy:
+            EventBusName: default
+      Events:
+        ListSpaces:
+          Type: Api
+          Properties:
+            Path: /catalog
+            Method: get
+        GetSpace:
+          Type: Api
+          Properties:
+            Path: /catalog/{space_id}
+            Method: get
+        ChangeAvailability:
+          Type: Api
+          Properties:
+            Path: /catalog/{space_id}/availability
+            Method: put
+
+  CatalogEventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: catalog-events
+      VisibilityTimeout: 60
+
+  SpaceChangedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: space-changed-rule
+      EventPattern:
+        source:
+          - coworking.catalog
+        detail-type:
+          - SpaceChanged
+      Targets:
+        - Id: catalog-events-queue
+          Arn: !GetAtt CatalogEventsQueue.Arn
+
+  CatalogEventsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref CatalogEventsQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt CatalogEventsQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt SpaceChangedRule.Arn
+
+  ConsumerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: consumer-fn
+      CodeUri: lambda-consumer/
+      Handler: handler.lambda_handler
+      Environment:
+        Variables:
+          ORDERS_URL: !Ref OrdersUrl
+      Events:
+        FromQueue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt CatalogEventsQueue.Arn
+            BatchSize: 5
+
+Outputs:
+  ApiBaseUrl:
+    Description: URL base de API Gateway
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
