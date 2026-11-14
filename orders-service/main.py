@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from database import Order, get_db
+from database import Order, get_db, run_with_retry
 
 app = FastAPI(title="Orders Service")
 
@@ -45,7 +45,9 @@ def health():
 @app.get("/orders")
 def list_orders(db: Session = Depends(get_db)):
     try:
-        orders = db.query(Order).order_by(Order.id).all()
+        orders = run_with_retry(
+            lambda: db.query(Order).order_by(Order.id).all(), db
+        )
     except OperationalError:
         raise HTTPException(status_code=503, detail="Database unavailable")
     return [order_to_dict(o) for o in orders]
@@ -88,20 +90,23 @@ def create_order(
     space = response.json()
     total_price = space["price_per_hour"] * hours
 
-    # 3. Guardar la orden en PostgreSQL
-    order = Order(
-        space_id=space_id,
-        space_name=space["name"],
-        user_email=user_email,
-        hours=hours,
-        total_price=total_price,
-    )
-    try:
+    # 3. Guardar la orden en PostgreSQL (con reintentos)
+    def save_order():
+        order = Order(
+            space_id=space_id,
+            space_name=space["name"],
+            user_email=user_email,
+            hours=hours,
+            total_price=total_price,
+        )
         db.add(order)
         db.commit()
         db.refresh(order)
+        return order
+
+    try:
+        order = run_with_retry(save_order, db)
     except OperationalError:
-        db.rollback()
         raise HTTPException(status_code=503, detail="Database unavailable")
 
     return order_to_dict(order)

@@ -1,5 +1,6 @@
 import enum
 import os
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import (
@@ -11,6 +12,7 @@ from sqlalchemy import (
     String,
     create_engine,
 )
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # La cadena de conexion viene del entorno (docker-compose / .env), nunca del codigo.
@@ -74,3 +76,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def run_with_retry(operation, db, retries=3, delay=0.5):
+    """Ejecuta operation(); si la base falla, hace rollback, espera y reintenta.
+
+    Espera delay, 2*delay, ... entre intentos. Tras el ultimo intento
+    fallido vuelve a lanzar OperationalError para que el endpoint responda 503.
+    """
+    for attempt in range(1, retries + 1):
+        try:
+            return operation()
+        except OperationalError:
+            db.rollback()
+            if attempt == retries:
+                raise
+            time.sleep(delay * attempt)
