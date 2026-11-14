@@ -16,11 +16,37 @@ services:
       - "8002:8002"
     environment:
       - CATALOG_URL=http://catalog-service:8001
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
-      - catalog-service
+      catalog-service:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - coworking-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: coworking-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - coworking-network
 
 networks:
   coworking-network:
     driver: bridge
+
+volumes:
+  postgres-data:
