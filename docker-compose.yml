@@ -25,6 +25,17 @@ services:
     networks:
       - coworking-network
 
+  analytics-service:
+    build: ./analytics-service
+    container_name: analytics-service
+    ports:
+      - "8003:8003"
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_DB=${MONGODB_DB:-coworking_analytics}
+    networks:
+      - coworking-network
+
   postgres:
     image: postgres:16-alpine
     container_name: coworking-postgres
