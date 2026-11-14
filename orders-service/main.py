@@ -1,17 +1,18 @@
 import os
-from datetime import datetime, timezone
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
+
+from database import Order, get_db
 
 app = FastAPI(title="Orders Service")
 
 # En Docker Compose, "catalog-service" es el nombre DNS del otro contenedor.
 CATALOG_URL = os.getenv("CATALOG_URL", "http://catalog-service:8001")
-
-ORDERS = []
 
 
 class SpaceChanged(BaseModel):
@@ -20,8 +21,20 @@ class SpaceChanged(BaseModel):
     changed_at: str | None = None
 
 
-# Espacios que el catálogo marcó como no disponibles (en memoria)
+# Espacios que el catalogo marco como no disponibles (en memoria)
 UNAVAILABLE_SPACES = set()
+
+
+def order_to_dict(order: Order) -> dict:
+    return {
+        "id": order.id,
+        "space_id": order.space_id,
+        "space_name": order.space_name,
+        "user_email": order.user_email,
+        "hours": order.hours,
+        "total_price": order.total_price,
+        "created_at": order.created_at.isoformat(),
+    }
 
 
 @app.get("/health")
@@ -30,8 +43,12 @@ def health():
 
 
 @app.get("/orders")
-def list_orders():
-    return ORDERS
+def list_orders(db: Session = Depends(get_db)):
+    try:
+        orders = db.query(Order).order_by(Order.id).all()
+    except OperationalError:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return [order_to_dict(o) for o in orders]
 
 
 @app.post("/events/space-changed")
@@ -44,7 +61,12 @@ def handle_space_changed(evt: SpaceChanged):
 
 
 @app.post("/orders")
-def create_order(space_id: int, user_email: str, hours: int):
+def create_order(
+    space_id: int,
+    user_email: str,
+    hours: int,
+    db: Session = Depends(get_db),
+):
     if hours <= 0:
         raise HTTPException(status_code=400, detail="hours must be greater than 0")
 
@@ -62,22 +84,27 @@ def create_order(space_id: int, user_email: str, hours: int):
     if response.status_code != 200:
         raise HTTPException(status_code=502, detail="Unexpected response from catalog")
 
-    # 2. Usar los datos del catálogo (aquí está la dependencia del contrato)
+    # 2. Usar los datos del catalogo (aqui esta la dependencia del contrato)
     space = response.json()
     total_price = space["price_per_hour"] * hours
 
-    # 3. Guardar la orden en memoria
-    order = {
-        "id": len(ORDERS) + 1,
-        "space_id": space_id,
-        "space_name": space["name"],
-        "user_email": user_email,
-        "hours": hours,
-        "total_price": total_price,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    ORDERS.append(order)
-    return order
+    # 3. Guardar la orden en PostgreSQL
+    order = Order(
+        space_id=space_id,
+        space_name=space["name"],
+        user_email=user_email,
+        hours=hours,
+        total_price=total_price,
+    )
+    try:
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+    except OperationalError:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    return order_to_dict(order)
 
 
 if __name__ == "__main__":
