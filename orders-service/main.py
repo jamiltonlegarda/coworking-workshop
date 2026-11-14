@@ -1,8 +1,6 @@
-import os
-
-import httpx
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -21,11 +19,17 @@ from auth import (
     require_role,
 )
 from database import Order, User, get_db, run_with_retry
+from middleware import (
+    call_catalog,
+    catalog_breaker,
+    rate_limit_middleware,
+    rate_limiter,
+)
 
 app = FastAPI(title="Orders Service")
 
-# En Docker Compose, "catalog-service" es el nombre DNS del otro contenedor.
-CATALOG_URL = os.getenv("CATALOG_URL", "http://catalog-service:8001")
+# Lab 11: definir el middleware no basta, hay que registrarlo.
+app.middleware("http")(rate_limit_middleware)
 
 
 class SpaceChanged(BaseModel):
@@ -53,6 +57,18 @@ def order_to_dict(order: Order) -> dict:
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "orders-service"}
+
+
+@app.get("/resilience/status")
+def resilience_status():
+    """Estado del circuit breaker del catalogo y del rate limiter (para demos)."""
+    return {
+        "catalog_circuit": catalog_breaker.snapshot(),
+        "rate_limit": {
+            "max_requests": rate_limiter.max_requests,
+            "window_seconds": rate_limiter.window_seconds,
+        },
+    }
 
 
 # ----------------------------- Autenticacion -----------------------------
@@ -171,7 +187,7 @@ def handle_space_changed(evt: SpaceChanged):
 
 
 @app.post("/orders")
-def create_order(
+async def create_order(
     space_id: int,
     hours: int,
     current_user: UserInDB = Depends(get_current_user),
@@ -186,22 +202,15 @@ def create_order(
     if space_id in UNAVAILABLE_SPACES:
         raise HTTPException(status_code=409, detail="Space not available")
 
-    # 1. Consultar al catalog-service por HTTP
-    try:
-        response = httpx.get(f"{CATALOG_URL}/spaces/{space_id}", timeout=3.0)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Catalog service unavailable")
-
-    if response.status_code == 404:
-        raise HTTPException(status_code=404, detail="Space not found")
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail="Unexpected response from catalog")
+    # 1. Consultar al catalog-service (retry con backoff + circuit breaker).
+    #    Lanza 404 / 502 / 503 segun corresponda.
+    space = await call_catalog(space_id)
 
     # 2. Usar los datos del catalogo (aqui esta la dependencia del contrato)
-    space = response.json()
     total_price = space["price_per_hour"] * hours
 
-    # 3. Guardar la orden en PostgreSQL (con reintentos)
+    # 3. Guardar la orden en PostgreSQL (con reintentos). Es codigo bloqueante,
+    #    asi que se ejecuta en un hilo para no frenar el bucle asincrono.
     def save_order():
         order = Order(
             space_id=space_id,
@@ -216,7 +225,7 @@ def create_order(
         return order
 
     try:
-        order = run_with_retry(save_order, db)
+        order = await run_in_threadpool(run_with_retry, save_order, db)
     except OperationalError:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
